@@ -46,6 +46,11 @@
 #include <sys/time.h>
 #include <mpi.h>
 
+#define ERROR 404
+#define FINISH 100
+#define RESERVE_PROCESS 16
+#define PROC_NUM 16
+
   int mtype;
   int offset[2];
   int task, numtasks;
@@ -64,4 +69,7 @@
   MPI_Status status;
   MPI_Request request;
   float mean = 0;
-  int tmp_calc[16];
+  int tmp_calc[PROC_NUM];
+  int start_row[PROC_NUM - 2] = {0};
+  int end_row[PROC_NUM - 2] = {0};
+  int *ranks_gf, *ranks_gc;

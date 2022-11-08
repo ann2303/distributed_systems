@@ -15,12 +15,18 @@ static void err_handler(MPI_Comm *pcomm, int *perr, ...) {
     MPIX_Comm_failure_get_acked(main_comm, &group_f);
     MPI_Group_size(group_f, &nf);
     MPI_Error_string(err, errstr, &len);
-    printf("\nRank %d / %d: Notified of error %s. %d found dead\n", rank, size, errstr, nf);
 
-    // создаем новый коммуникатор без вышедшего из строя процесса
-    MPIX_Comm_shrink(main_comm, &main_comm);
-    MPI_Comm_rank(main_comm, &rank);
-    
+    ranks_gf = (int *)malloc(nf * sizeof(int));
+    ranks_gc = (int *)malloc(nf * sizeof(int));
+    MPI_Comm_group(comm, &group_c);
+    for (i = 0; i < nf; i++)
+        ranks_gf[i] = i;
+    MPI_Group_translate_ranks(group_f, nf, ranks_gf,
+                              group_c, ranks_gc);
+
+    MPI_Send(0, 0, MPI_INT, RESERVE_PROCESS, ERROR, MPI_COMM_WORLD);
+
+    free(ranks_gf);
 }
 
 void print_array_to_file(int *a, int len_a, char *filename) {
@@ -96,34 +102,46 @@ void print_array(int ni, int nl,
 
 
 static
-void MPI_kernel_2mm() {
+void MPI_kernel_2mm(int task) {
   if (task == 0) {
 
     printf("MPI_kernel_2mm %d\n", task);
-    // send A, B, C, D
+    int step = NI / (numtasks - 2);
+    int r = NI % (numtasks - 2);
+    int i = 0;
+    for (i = 0; i < numtasks - 2; ++i) {
+      start_row[i] = cur;
+      end_row[i] = cur += step;
+    }
+    end_row[numtasks - 2] += r;
+    
+
     print_array_to_file(B, NK * NJ, "B.txt");
     print_array_to_file(C, NJ * NL, "C.txt");
 
+    // allow calculation
+    for (i = 0; i < numtasks - 2; ++i) {
+      MPI_Isend(0, 0, MPI_CHAR, i + 1, ALLOW, MPI_COMM_WORLD, &status);
+    }
+
     // collect results
-    for (int dst = 1; dst < numtasks; dst++)
+    for (int dst = 1; dst < numtasks - 1; dst++)
     {
-      MPI_Recv(offset, 2, MPI_INT, dst, 3, MPI_COMM_WORLD, &status);
-      MPI_Recv(&D[offset[0]][0], (offset[1] - offset[0]) * NL, MPI_FLOAT, dst, 4,
+      MPI_Recv(&D[start_row[dst - 1]][0], (finish_row[dst - 1] - start_row[dst - 1]) * NL, MPI_FLOAT, MPI_ANY_SOURCE, dst,
                 MPI_COMM_WORLD, &status);
-      printf("Recv data from %d\n", dst);
+      printf("Recv data from %d\n", status.MPI_SOURCE);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Send(0, 0, MPI_INT, RESERVE_PROCESS, FINISH, MPI_COMM_WORLD);
     printf("Done\n");
 
     bench_timer_stop();
     bench_timer_print();
-
   } else if (task > 0) {
     printf("MPI_kernel_2mm %d\n", task);
-    printf("%d has %d\n", task, offset[1] - offset[0]);
     
-    if (tmp_calc[rank] == 1) {
+    if (tmp_calc[task] == 1) {
       char tmp_filename[10];
       sprintf(tmp_filename, "tmp%d.txt", rank);
       read_array_from_file(tmp, nj * nk, tmp_filename);
@@ -131,14 +149,14 @@ void MPI_kernel_2mm() {
     }
     
     // initialization
-    for (i = offset[0]; i < offset[1]; i++)
+    for (i = start_row[task - 1]; i < end_row[task - 1]; i++)
       for (j = 0; j < nk; j++)
         A[i][j] = (float) ((i*j+1) % ni) / ni;
 
     read_array_from_file(&B[0][0], NK * NJ, "B.txt");
     
 
-    for (i = offset[0]; i < offset[1]; i++)
+    for (i = start_row[task - 1]; i < end_row[task - 1]; i++)
       for (j = 0; j < nj; j++)
       {
         tmp[i][j] = 0.0f;
@@ -146,19 +164,19 @@ void MPI_kernel_2mm() {
           tmp[i][j] += 1.2f * A[i][k] * B[k][j];
       }
     char tmp_filename[10];
-    sprintf(tmp_filename, "tmp%d.txt", rank);
+    sprintf(tmp_filename, "tmp%d.txt", task);
 
     print_array_to_file(tmp, nj * nk, tmp_filename);
-    tmp_calc[rank] = 1;
+    tmp_calc[task] = 1;
 
     checkpoint:
 
-    for (i = offset[0]; i < offset[1]; i++)
+    for (i = start_row[task - 1]; i < end_row[task - 1]; i++)
       for (j = 0; j < nl; j++)
         D[i][j] = (float) (i*(j+2) % nk) / nk;
 
     read_array_from_file(&C[0][0], NJ * NL, "C.txt");
-    for (i = offset[0]; i < offset[1]; i++)
+    for (i = start_row[task - 1]; i < end_row[task - 1]; i++)
       for (j = 0; j < nl; j++)
       {
         D[i][j] *= 1.5f;
@@ -166,8 +184,7 @@ void MPI_kernel_2mm() {
           D[i][j] += tmp[i][k] * C[k][j];
       }
     printf("%d after calculation\n", task);
-    MPI_Send(offset, 2, MPI_INT, 0, 3, MPI_COMM_WORLD);
-    MPI_Send(&D[offset[0]][0], (offset[1] - offset[0]) * NL, MPI_FLOAT, 0, 4,
+    MPI_Send(&D[start_row[task - 1]][0], (end_row[task - 1] - start_row[task - 1]) * NL, MPI_FLOAT, 0, 4,
                     MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
                     
@@ -197,16 +214,23 @@ int main(int argc, char** argv)
     if (task == 0) {
       bench_timer_start();
       MPI_init_array();  
+    } else if (task == RESERVE_PROCESS) {
+      MPI_Recv(0, 0, MPI_CHAR, 0, MPI_ANY_TAG,
+                MPI_COMM_WORLD, &status);
+      if (status.MPI_TAG == ERROR) {
+        int i;
+        for (i = 0; i < nf; i++) {
+          MPI_kernel_2mm(ranks_gc[i]);
+        }
+        MPI_Recv(0, 0, MPI_CHAR, 0, FINISH,
+                MPI_COMM_WORLD, &status);
+      }
+      
+    } else {
+      MPI_Recv(0, 0, MPI_CHAR, 0, ALLOW,
+                MPI_COMM_WORLD, &status);
+      MPI_kernel_2mm(task);  
     }
-
-    int step = NI / (numtasks - 1);
-    int r = NI % (numtasks - 1);
-    if (task > 0) {
-      offset[0] = step * (task - 1);
-      offset[1] = (task == (numtasks - 1)) ? offset[0] + step + r : offset[0] + step;
-    }
-    
-    MPI_kernel_2mm();  
   }
   if (task == 0) print_array(ni, nl, D);
   MPI_Finalize();
