@@ -41,15 +41,19 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
 #include <mpi.h>
+#include <mpi-ext.h>
+
 
 #define ERROR 404
 #define FINISH 100
-#define RESERVE_PROCESS 16
+#define RESERVE_PROCESS 15
 #define PROC_NUM 16
+#define ALLOW 777
 
   int mtype;
   int offset[2];
@@ -69,7 +73,10 @@
   MPI_Status status;
   MPI_Request request;
   float mean = 0;
-  int tmp_calc[PROC_NUM];
+  int tmp_calc = 0;
   int start_row[PROC_NUM - 2] = {0};
   int end_row[PROC_NUM - 2] = {0};
   int *ranks_gf, *ranks_gc;
+  int step, r;
+
+  #define KILLED 2
