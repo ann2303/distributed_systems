@@ -133,7 +133,6 @@ void MPI_kernel_2mm(int task) {
     }
 
    printf("Message for reserve finish %d\n", reserve_process);
-   int i;
    for (i = 1; i <= reserve_process; i++) {
     MPI_Send(0, 0, MPI_CHAR, i, FINISH, my_comm);
    }
@@ -254,9 +253,10 @@ static void verbose_errhandler(MPI_Comm* pcomm, int* perr, ...) {
         MPI_Comm_size(my_comm, &size);
 
         int i;
-        for (i = 0; i < myrank; i++) {
-          MPI_Send(&reserve_process, 1, MPI_INT, i, FROM_HANDLER, my_comm);
-        }
+         MPI_Send(&reserve_process, 1, MPI_INT, 0, FROM_HANDLER, my_comm);
+        // for (i = 0; i < myrank; i++) {
+        //   MPI_Send(&reserve_process, 1, MPI_INT, i, FROM_HANDLER, my_comm);
+        // }
 
         for (i = 0; i < nf; ++i) { 
            MPI_kernel_2mm(ranks_gc[i]);
@@ -273,23 +273,23 @@ static void verbose_errhandler(MPI_Comm* pcomm, int* perr, ...) {
         MPI_Comm_size(my_comm, &size);
         MPI_Recv(&reserve_process, 1, MPI_INT, MPI_ANY_SOURCE, FROM_HANDLER,
                 my_comm, &status);
-    } else {
+    } 
+    else {
         MPIX_Comm_shrink(my_comm, &my_comm);
         MPI_Comm_rank(my_comm, &myrank);
         MPI_Comm_size(my_comm, &size);
-        MPI_Recv(&reserve_process, 1, MPI_INT, MPI_ANY_SOURCE, FROM_HANDLER,
-                my_comm, &status);
+        MPI_kernel_2mm(rank);
+        MPI_Finalize();
+        exit(0);
     }
-    MPI_Barrier(my_comm);
-    printf("After barrier %d\n", myrank);
 }
 
 int main(int argc, char** argv)
 {
   MPI_Init(&argc,&argv);
-  MPI_Comm_rank(my_comm,&myrank);
+  MPI_Comm_rank(my_comm, &myrank);
   task = myrank;
-  MPI_Comm_size(my_comm,&size);
+  MPI_Comm_size(my_comm, &size);
   numtasks = size;
   step = NI / (numtasks - 2);
   r = NI % (numtasks - 2);
@@ -306,21 +306,20 @@ int main(int argc, char** argv)
       bench_timer_start();
       MPI_init_array();  
       MPI_kernel_2mm(task);
-    } else if (task != RESERVE_PROCESS) {
+    } else if (task != reserve_process) {
       MPI_Recv(0, 0, MPI_CHAR, 0, ALLOW,
                 my_comm, &status);
       MPI_kernel_2mm(task);
     }
   }
-  MPI_Barrier(my_comm);
   if (task != 0) {
     MPI_Recv(0, 0, MPI_CHAR, 0, FINISH,
                 my_comm, &status);
   }
   if (task == 0) print_array(ni, nl, D);
   printf("%d is MYSIZE %d\n", size, myrank);
-  MPI_Barrier(my_comm);
-  printf("%d is MYSIZE %d\n", size, myrank);
+  // MPI_Barrier(my_comm);
+  // printf("%d is MYSIZE %d\n", size, myrank);
   MPI_Finalize();
   return 0;
 }
