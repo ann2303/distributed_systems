@@ -78,5 +78,7 @@
   int end_row[PROC_NUM - 2] = {0};
   int *ranks_gf, *ranks_gc;
   int step, r;
+  int reserve_process = RESERVE_PROCESS;
 
   #define KILLED 2
+  #define FROM_HANDLER 18

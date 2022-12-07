@@ -256,51 +256,43 @@ static void verbose_errhandler(MPI_Comm* pcomm, int* perr, ...) {
 
     printf(")\n");
 
-    // MPIX_Comm_shrink(comm, &my_comm);
-    // MPI_Comm_rank(my_comm, &task);
-    // MPI_Comm_size(my_comm, &ranksize);
-
     free(ranks_gc); free(ranks_gf);
-
     
-        int tasknum;
-        int idx;
-        // collect results
-        printf("PROC_NUM - 2 == %d\n", PROC_NUM - 2);
-        for (idx = tmp_calc; idx < PROC_NUM - 2; idx++)
-        {
-          printf("%d\n", idx);
-          MPI_Recv(&tasknum, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG,
-                    my_comm, &status);
-          printf("GOT MSG\n");
-          int dst = status.MPI_SOURCE;
-          int start = (tasknum - 1) * step;
-          int end = start + step;
-          if (tasknum == PROC_NUM - 2) {
-              end += r;
-          }
-          MPI_Recv(&D[start][0], (end - start) * NL, 
-            MPI_FLOAT, dst, MPI_ANY_TAG, my_comm, &status);
-          printf("Recv data from %d, %d/%d\n", status.MPI_SOURCE, idx, numtasks - 2);
-          tmp_calc += 1;
+        // int tasknum;
+        // int idx;
+        // // collect results
+        // printf("PROC_NUM - 2 == %d\n", PROC_NUM - 2);
+        // for (idx = tmp_calc; idx < PROC_NUM - 2; idx++)
+        // {
+        //   printf("%d\n", idx);
+        //   MPI_Recv(&tasknum, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG,
+        //             my_comm, &status);
+        //   printf("GOT MSG\n");
+        //   int dst = status.MPI_SOURCE;
+        //   int start = (tasknum - 1) * step;
+        //   int end = start + step;
+        //   if (tasknum == PROC_NUM - 2) {
+        //       end += r;
+        //   }
+        //   MPI_Recv(&D[start][0], (end - start) * NL, 
+        //     MPI_FLOAT, dst, MPI_ANY_TAG, my_comm, &status);
+        //   printf("Recv data from %d, %d/%d\n", status.MPI_SOURCE, idx, numtasks - 2);
+        //   tmp_calc += 1;
         }
 
-        printf("Message for reserve finish\n");
-        MPI_Send(&tasknum, 1, MPI_CHAR, RESERVE_PROCESS, FINISH, my_comm);
-        printf("Done\n");
+        // printf("Message for reserve finish\n");
+        // MPI_Send(&tasknum, 1, MPI_CHAR, RESERVE_PROCESS, FINISH, my_comm);
+        // printf("Done\n");
 
-        bench_timer_stop();
-        bench_timer_print();
+        // bench_timer_stop();
+        // bench_timer_print();
         MPIX_Comm_shrink(comm, &my_comm);
     // MPI_Comm_rank(my_comm, &task);
     // MPI_Comm_size(my_comm, &ranksize);
-    print_array(ni, nl, D);
-  MPI_Finalize();
-    exit(0);
+    // print_array(ni, nl, D);
+    // MPI_Finalize();
+    // exit(0);
     }
-
-    // MPIX_Comm_shrink(my_comm, &my_comm);
-
 }
 
 int main(int argc, char** argv)
