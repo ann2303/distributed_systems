@@ -3,7 +3,7 @@
 
 double bench_t_start, bench_t_end;
 MPI_Comm my_comm = MPI_COMM_WORLD; // current communicator
-int myrank, ranksize; // current rank and number of processes in communicator
+int myrank; // current rank and number of processes in communicator
 
 
 void print_array_to_file(int *a, int len_a, char *filename) {
@@ -107,9 +107,7 @@ void MPI_kernel_2mm(int task) {
     print_array_to_file(B, NK * NJ, "B.txt");
     print_array_to_file(C, NJ * NL, "C.txt");
 
-    printf("I printed to file\n");
-
-    // allow calculation
+    // allow calculation after print matrix to file
     for (i = 0; i < numtasks - 2; ++i) {
       MPI_Isend(0, 0, MPI_CHAR, i + 1, ALLOW, my_comm, &status);
     }
@@ -129,13 +127,12 @@ void MPI_kernel_2mm(int task) {
       }
       MPI_Recv(&D[start][0], (end - start) * NL, 
         MPI_FLOAT, dst, MPI_ANY_TAG, my_comm, &status);
-      printf("Recv data from %d, %d/%d\n", status.MPI_SOURCE, idx, numtasks - 2);
       tmp_calc += 1;
+      printf("Recv data from %d, %d/%d\n", status.MPI_SOURCE, idx, numtasks - 2);
     }
 
-    printf("Message for reserve finish\n");
+    // send finish message for RESERVE_PROCESS
     MPI_Send(0, 1, MPI_CHAR, RESERVE_PROCESS, FINISH, my_comm);
-    printf("Done\n");
 
     bench_timer_stop();
     bench_timer_print();
@@ -143,7 +140,6 @@ void MPI_kernel_2mm(int task) {
     printf("MPI_kernel_2mm %d\n", task);
 
     if (myrank == KILLED) {
-      printf("****************KIIIILLLLL***********\n");
       raise(SIGKILL);
     }
 
@@ -153,16 +149,8 @@ void MPI_kernel_2mm(int task) {
         end += r;
     }
     
-    char tmp_filename_old[10];
-    sprintf(tmp_filename_old, "tmp%d.txt", task);
-
-    if (access(tmp_filename_old, F_OK) == 0) {
-      read_array_from_file_float(tmp, nj * nk, tmp_filename_old);
-      goto checkpoint;
-    }
     
     // initialization
-    printf("start row %d end row %d\n", start, end);
     for (i = start; i < end; i++)
       for (j = 0; j < nk; j++)
         A[i][j] = (float) ((i*j+1) % ni) / ni;
@@ -177,12 +165,6 @@ void MPI_kernel_2mm(int task) {
         for (k = 0; k < nk; ++k)
           tmp[i][j] += 1.2f * A[i][k] * B[k][j];
       }
-    char tmp_filename[10];
-    sprintf(tmp_filename, "tmp%d.txt", task);
-
-    print_array_to_file_float(tmp, nj * nk, tmp_filename);
-
-    checkpoint:
 
     for (i = start; i < end; i++)
       for (j = 0; j < nl; j++)
@@ -209,8 +191,6 @@ void MPI_kernel_2mm(int task) {
 
 static void verbose_errhandler(MPI_Comm* pcomm, int* perr, ...) {
 
-    printf("verbose_errhandler\n");
-    printf("My rank is %d\n", myrank);
     MPI_Comm comm = *pcomm;
     int err = *perr;
     char errstr[MPI_MAX_ERROR_STRING];
@@ -223,77 +203,64 @@ static void verbose_errhandler(MPI_Comm* pcomm, int* perr, ...) {
     MPI_Comm_rank(my_comm, &rank);
     MPI_Comm_size(my_comm, &size);
 
-    MPIX_Comm_failure_ack(comm);
-    MPIX_Comm_failure_get_acked(comm, &group_f);
+    MPIX_Comm_failure_ack(my_comm);
+    MPIX_Comm_failure_get_acked(my_comm, &group_f);
     MPI_Group_size(group_f, &nf);
 
     MPI_Error_string(err, errstr, &len);
     printf("Rank %d / %d:  Notified of error %s. %d found dead: ( ", 
             rank, size, errstr, nf);
 
-            if (rank == 0) {
+    if (rank == 0) {
 
-    ranks_gf = (int*)malloc(nf * sizeof(int));
-    ranks_gc = (int*)malloc(nf * sizeof(int));
+      ranks_gf = (int*)malloc(nf * sizeof(int));
+      ranks_gc = (int*)malloc(nf * sizeof(int));
 
-    MPI_Comm_group(comm, &group_c);
+      MPI_Comm_group(my_comm, &group_c);
 
-    for (i = 0; i < nf; ++i) ranks_gf[i] = i;
+      for (i = 0; i < nf; ++i) ranks_gf[i] = i;
 
-    MPI_Group_translate_ranks(group_f, nf, ranks_gf, group_c, ranks_gc);
+      MPI_Group_translate_ranks(group_f, nf, ranks_gf, group_c, ranks_gc);
 
-    for (i = 0; i < nf; ++i) { 
-      printf("%d ", ranks_gc[i]);
-      if (rank == 0) {
+      for (i = 0; i < nf; ++i) { 
+        printf("%d ", ranks_gc[i]);
+      }
+
+      printf(")\n");
+
+      for (i = 0; i < nf; ++i) { 
         MPI_Send(&ranks_gc[i], 1, MPI_CHAR, RESERVE_PROCESS, ERROR, my_comm);
-      } 
-    }
+      }
+      free(ranks_gc); free(ranks_gf);
 
-    printf(")\n");
-
-    // MPIX_Comm_shrink(comm, &my_comm);
-    // MPI_Comm_rank(my_comm, &task);
-    // MPI_Comm_size(my_comm, &ranksize);
-
-    free(ranks_gc); free(ranks_gf);
-
-    
-        int tasknum;
-        int idx;
-        // collect results
-        printf("PROC_NUM - 2 == %d\n", PROC_NUM - 2);
-        for (idx = tmp_calc; idx < PROC_NUM - 2; idx++)
-        {
-          printf("%d\n", idx);
-          MPI_Recv(&tasknum, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG,
-                    my_comm, &status);
-          printf("GOT MSG\n");
-          int dst = status.MPI_SOURCE;
-          int start = (tasknum - 1) * step;
-          int end = start + step;
-          if (tasknum == PROC_NUM - 2) {
-              end += r;
-          }
-          MPI_Recv(&D[start][0], (end - start) * NL, 
-            MPI_FLOAT, dst, MPI_ANY_TAG, my_comm, &status);
-          printf("Recv data from %d, %d/%d\n", status.MPI_SOURCE, idx, numtasks - 2);
-          tmp_calc += 1;
+      int tasknum;
+      int idx;
+      // collect results
+      for (idx = tmp_calc; idx < PROC_NUM - 2; idx++)
+      {
+        MPI_Recv(&tasknum, 1, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG,
+                  my_comm, &status);
+        int dst = status.MPI_SOURCE;
+        int start = (tasknum - 1) * step;
+        int end = start + step;
+        if (tasknum == PROC_NUM - 2) {
+            end += r;
         }
+        MPI_Recv(&D[start][0], (end - start) * NL, 
+          MPI_FLOAT, dst, MPI_ANY_TAG, my_comm, &status);
+        tmp_calc += 1;
+        printf("Recv data from %d, %d/%d\n", status.MPI_SOURCE, tmp_calc, numtasks - 2);
+      }
 
-        printf("Message for reserve finish\n");
-        MPI_Send(&tasknum, 1, MPI_CHAR, RESERVE_PROCESS, FINISH, my_comm);
-        printf("Done\n");
+      printf("Message for reserve finish\n");
+      MPI_Send(&tasknum, 1, MPI_CHAR, RESERVE_PROCESS, FINISH, my_comm);
 
-        bench_timer_stop();
-        bench_timer_print();
-        print_array(ni, nl, D);
-        MPIX_Comm_shrink(my_comm, &my_comm);
-        MPI_Comm_rank(my_comm, &task);
-        MPI_Comm_size(my_comm, &ranksize);
-        exit(0);
+      bench_timer_stop();
+      bench_timer_print();
+      print_array(ni, nl, D);
+      MPI_Finalize();
+      exit(0);
     }
-
-    MPIX_Comm_shrink(my_comm, &my_comm);
 
 }
 
@@ -302,12 +269,11 @@ int main(int argc, char** argv)
   MPI_Init(&argc,&argv);
   MPI_Comm_rank(my_comm,&myrank);
   task = myrank;
-  printf("I'm %d\n", task);
   MPI_Comm_size(my_comm,&numtasks);
   step = NI / (numtasks - 2);
   r = NI % (numtasks - 2);
   
-  // устанавливаем обработчик ошибок
+  // set err handler
   MPI_Errhandler errh;
   MPI_Comm_create_errhandler(verbose_errhandler, &errh);
   MPI_Comm_set_errhandler(my_comm, errh);
@@ -323,8 +289,6 @@ int main(int argc, char** argv)
       MPI_Recv(0, 0, MPI_CHAR, 0, ALLOW,
                 my_comm, &status);
       MPI_kernel_2mm(task);
-      // MPI_Recv(0, 0, MPI_CHAR, 0, FINISH,
-      //           my_comm, &status);  
     } else {
       char buf;
       while (1) {
@@ -333,7 +297,7 @@ int main(int argc, char** argv)
         if (status.MPI_TAG == FINISH) {
           return;
         } else {
-          printf("reserve process started\n");
+          printf("Reserve process started\n");
           MPI_kernel_2mm(buf);
         }
       }
