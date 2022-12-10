@@ -18,7 +18,7 @@ void print_array_to_file(int *a, int len_a, char *filename) {
 void print_array_to_file_float(float *a, int len_a, char *filename) {
     FILE *fp = fopen(filename, "w");
     for (int i = 0; i < len_a; ++i) {
-        fprintf(fp, "%lf ", a[i]);
+        fprintf(fp, "%f ", a[i]);
     }
     fclose(fp);
 }
@@ -34,7 +34,7 @@ void read_array_from_file(int *a, int len_a, char *filename) {
 void read_array_from_file_float(float *a, int len_a, char *filename) {
     FILE *fp = fopen(filename, "r");
     for (int i = 0; i < len_a; ++i) {
-        fscanf(fp, "%lf", &a[i]);
+        fscanf(fp, "%f", &a[i]);
     }
     fclose(fp);
 }
@@ -127,11 +127,11 @@ void MPI_kernel_2mm(int task) {
     }
     
     char tmp_filename_old[10];
-    sprintf(tmp_filename_old, "tmp%d.txt", task);
+    sprintf(tmp_filename_old, "D%d.txt", task);
 
     if (access(tmp_filename_old, F_OK) == 0) {
-      read_array_from_file_float(tmp, nj * nk, tmp_filename_old);
-      goto checkpoint;
+      read_array_from_file_float(&D[start][0], (end - start) * NL, tmp_filename_old);
+      return;
     }
     
     // initialization
@@ -149,12 +149,6 @@ void MPI_kernel_2mm(int task) {
         for (k = 0; k < nk; ++k)
           tmp[i][j] += 1.2f * A[i][k] * B[k][j];
       }
-    char tmp_filename[10];
-    sprintf(tmp_filename, "tmp%d.txt", task);
-
-    print_array_to_file_float(tmp, nj * nk, tmp_filename);
-
-    checkpoint:
 
     for (i = start; i < end; i++)
       for (j = 0; j < nl; j++)
@@ -168,6 +162,12 @@ void MPI_kernel_2mm(int task) {
         for (k = 0; k < nj; ++k)
           D[i][j] += tmp[i][k] * C[k][j];
       }
+
+    char tmp_filename[10];
+    sprintf(tmp_filename, "D%d.txt", task);
+
+    // checkpoint
+    print_array_to_file_float(&D[start][0], (end - start) * NL, tmp_filename);
                   
   }
 

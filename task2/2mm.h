@@ -78,5 +78,9 @@
   int end_row[PROC_NUM - 2] = {0};
   int *ranks_gf, *ranks_gc;
   int step, r;
+  int reserve_process = RESERVE_PROCESS;
+  int nf = 0;
+  #define TASK 20
+  #define COMPUTE 21
 
   #define KILLED 2
